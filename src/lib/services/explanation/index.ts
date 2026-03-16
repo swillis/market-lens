@@ -19,7 +19,7 @@ import { synthesize } from "./synthesis";
 export async function runExplanationPipeline(
   input: AnalysisInput
 ): Promise<ExplanationResult> {
-  const scoredArticles = scoreArticles(input);
+  const scoredArticles = await scoreArticles(input);
   const drivers = consolidateDrivers(scoredArticles, input);
   const confidence = calculateConfidence(scoredArticles, drivers, input);
   const result = await synthesize(input, scoredArticles, drivers, confidence);

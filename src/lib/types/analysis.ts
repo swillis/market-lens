@@ -18,12 +18,23 @@ export type AnalysisInput = {
 };
 
 /**
- * A news article enriched with a relevance score after the scoring step.
- * relevanceScore: 0–1, where 1 = highly relevant to the price move.
+ * A news article enriched with scoring signals from the article-scoring step.
+ *
+ * relevance:      0–5 integer assigned by the LLM scorer
+ * relevanceScore: normalized 0–1 (relevance / 5) for downstream consumers
+ * relationType:   how the article relates to the price move
+ * usefulness:     how much weight synthesis should give it
+ * candidateDriver: short label for the potential driver this article supports
+ * rationale:      one-sentence justification from the scorer
  */
 export type ScoredArticle = NewsArticle & {
-  relevanceScore: number;
-  relevanceReason?: string;
+  articleIndex: number;
+  relevance: number;           // 0–5 (LLM-assigned)
+  relevanceScore: number;      // 0–1 normalized (relevance / 5)
+  relationType: "company" | "sector" | "macro" | "unrelated";
+  usefulness: "direct_evidence" | "supporting_context" | "irrelevant";
+  candidateDriver: string;
+  rationale: string;
 };
 
 /**

@@ -25,11 +25,20 @@ export function calculateConfidence(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   input: AnalysisInput
 ): "low" | "medium" | "high" {
-  const relevantArticles = scoredArticles.filter(
-    (a) => a.relevanceScore > 0.3
+  // Direct evidence: company-specific articles with high relevance
+  const directEvidence = scoredArticles.filter(
+    (a) => a.usefulness === "direct_evidence" || (a.relevance >= 4 && a.relationType === "company")
   );
 
-  if (drivers.length >= 2 || relevantArticles.length >= 3) return "high";
-  if (drivers.length >= 1 || relevantArticles.length >= 1) return "medium";
+  // Supporting context: sector/macro articles or moderate-relevance company articles
+  const supportingContext = scoredArticles.filter(
+    (a) => a.usefulness === "supporting_context" || (a.relevance >= 2 && a.relationType !== "unrelated")
+  );
+
+  // Pre-computed drivers (from consolidation step — currently always 0)
+  if (drivers.length >= 2 || directEvidence.length >= 2) return "high";
+  if (drivers.length >= 1 || directEvidence.length >= 1) return "medium";
+  if (supportingContext.length >= 2) return "medium";
+  if (supportingContext.length >= 1) return "low";
   return "low";
 }
