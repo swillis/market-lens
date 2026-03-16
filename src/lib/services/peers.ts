@@ -19,7 +19,8 @@ export async function fetchPeerContext(symbol: string): Promise<PeerContext> {
     if (!process.env.FINNHUB_API_KEY) return { peers: [] };
 
     const peersUrl = `${FINNHUB_BASE}/stock/peers?symbol=${encodeURIComponent(symbol)}&token=${process.env.FINNHUB_API_KEY}`;
-    const peersRes = await fetchWithTimeout(peersUrl, { timeout: 8000, next: { revalidate: 3600 } } as RequestInit & { timeout?: number });
+    // Increased timeout to 15 seconds for slower Finnhub responses
+    const peersRes = await fetchWithTimeout(peersUrl, { timeout: 15000, next: { revalidate: 3600 } } as RequestInit & { timeout?: number });
 
     if (!peersRes.ok) return { peers: [] };
 
@@ -33,7 +34,7 @@ export async function fetchPeerContext(symbol: string): Promise<PeerContext> {
 
     if (process.env.FMP_API_KEY && filteredPeers.length > 0) {
       const quotesUrl = `${FMP_BASE}/quote?symbol=${filteredPeers.join(",")}&apikey=${process.env.FMP_API_KEY}`;
-      const quotesRes = await fetchWithTimeout(quotesUrl, { timeout: 5000, next: { revalidate: 60 } } as RequestInit & { timeout?: number });
+      const quotesRes = await fetchWithTimeout(quotesUrl, { timeout: 8000, next: { revalidate: 60 } } as RequestInit & { timeout?: number });
 
       if (quotesRes.ok) {
         const rawQuotes = await quotesRes.json();
@@ -54,7 +55,7 @@ export async function fetchPeerContext(symbol: string): Promise<PeerContext> {
       peers: filteredPeers.map((s) => ({ symbol: s })),
     };
   } catch (err) {
-    console.warn(`Failed to fetch peers for ${symbol}:`, err);
+    // Silently return empty peers on timeout - this is not a critical feature
     return { peers: [] };
   }
 }
