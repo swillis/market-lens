@@ -19,8 +19,8 @@ export async function fetchPeerContext(symbol: string): Promise<PeerContext> {
     if (!process.env.FINNHUB_API_KEY) return { peers: [] };
 
     const peersUrl = `${FINNHUB_BASE}/stock/peers?symbol=${encodeURIComponent(symbol)}&token=${process.env.FINNHUB_API_KEY}`;
-    // Increased timeout to 15 seconds for slower Finnhub responses
-    const peersRes = await fetchWithTimeout(peersUrl, { timeout: 15000, next: { revalidate: 3600 } } as RequestInit & { timeout?: number });
+    // Short timeout so we fail fast and don't block the main response
+    const peersRes = await fetchWithTimeout(peersUrl, { timeout: 4000, next: { revalidate: 3600 } } as RequestInit & { timeout?: number });
 
     if (!peersRes.ok) return { peers: [] };
 
