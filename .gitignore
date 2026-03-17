@@ -7,6 +7,9 @@ package-lock.json
 build/
 dist/
 
+# Local dev data (snapshots, etc.)
+.data/
+
 # Misc
 .DS_Store
 *.pem

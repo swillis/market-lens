@@ -7,6 +7,7 @@ import type {
   CandidateDriver,
   ConsolidationResult,
 } from "@/lib/types/analysis";
+import { generateCanonicalKey } from "@/lib/utils/canonical-key";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -113,6 +114,7 @@ function getMockConsolidation(
       const hasCompany = articles.some((a) => a.relationType === "company");
       return {
         title: label,
+        canonicalKey: generateCanonicalKey(label),
         explanation: articles[0]?.rationale ?? "No explanation available.",
         supportingArticles: articles,
         evidenceArticleIndices: indices,
@@ -271,6 +273,7 @@ export async function consolidateDrivers(
 
       return {
         title: d.title,
+        canonicalKey: generateCanonicalKey(d.title),
         explanation: d.explanation,
         supportingArticles: supporting,
         evidenceArticleIndices: indices,

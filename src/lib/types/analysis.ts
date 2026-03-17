@@ -40,6 +40,9 @@ export type ScoredArticle = NewsArticle & {
 /**
  * A candidate price-move driver identified during consolidation.
  *
+ * canonicalKey:          stable normalized identifier derived from the title,
+ *                        used to group the same driver across snapshots over time.
+ *                        Example: "Meta AI investment and restructuring" → "meta_ai_investment"
  * strength:              0–1, computed deterministically from the relevance
  *                        scores of evidenceArticleIndices (NOT self-reported by LLM).
  * inferenceLevel:        "direct" if company-specific evidence exists, else "supporting".
@@ -48,6 +51,7 @@ export type ScoredArticle = NewsArticle & {
  */
 export type CandidateDriver = {
   title: string;
+  canonicalKey: string;
   explanation: string;
   supportingArticles: ScoredArticle[];
   evidenceArticleIndices: number[];
@@ -92,4 +96,43 @@ export type ExplanationResult = StockExplanation & {
     candidateDriversConsidered: number;
     computedAt: string;
   };
+};
+
+/**
+ * An immutable point-in-time record of what the pipeline determined about a
+ * stock's move. Stored whenever a new explanation is generated.
+ *
+ * Snapshots form the raw material for the narrative timeline — by comparing
+ * canonicalKeys across snapshots we can detect driver persistence, emergence,
+ * and resolution over time without re-running the LLM.
+ */
+export type NarrativeSnapshot = {
+  /** Unique identifier: symbol + ISO timestamp */
+  id: string;
+  symbol: string;
+  timestamp: string;           // ISO 8601
+
+  // Explanation fields (frozen at generation time)
+  summary: string;
+  confidenceScore: number;     // 0–1 deterministic
+  confidenceLabel: "low" | "medium" | "high";
+  reasoningType:
+    | "company"
+    | "sector"
+    | "macro"
+    | "company_and_sector"
+    | "unclear";
+
+  /** Compact driver records — canonicalKey enables cross-snapshot grouping */
+  drivers: Array<{
+    canonicalKey: string;
+    title: string;
+    driverType: "company" | "sector" | "macro";
+    strength: number;
+    inferenceLevel: "direct" | "supporting";
+    evidenceArticleIndices: number[];
+  }>;
+
+  /** The scored articles available at generation time */
+  articles: ScoredArticle[];
 };
