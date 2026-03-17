@@ -51,7 +51,8 @@ function buildPrompt(
   input: AnalysisInput,
   scoredArticles: ScoredArticle[],
   drivers: CandidateDriver[],
-  precomputedConfidence: "low" | "medium" | "high"
+  precomputedConfidence: "low" | "medium" | "high",
+  precomputedReasoningType: string
 ): string {
   const { price, company, peers } = input;
   const direction = price.changePercent >= 0 ? "UP" : "DOWN";
@@ -61,7 +62,8 @@ function buildPrompt(
 SECTOR: ${company.sector || "Unknown"} | INDUSTRY: ${company.industry || "Unknown"}
 PRICE MOVE: ${direction} ${absPercent}% (from $${price.previousClose.toFixed(2)} to $${price.currentPrice.toFixed(2)})
 AS OF: ${price.asOf}
-PRE-COMPUTED CONFIDENCE HINT: ${precomputedConfidence} (based on article count and evidence strength)
+PRE-COMPUTED CONFIDENCE: ${precomputedConfidence} (based on article count and evidence strength — use this value, do not override)
+PRE-COMPUTED REASONING TYPE: ${precomputedReasoningType} (based on driver clustering — use this value, do not override)
 
 RECENT NEWS ARTICLES (sorted by relevance score):
 `;
@@ -87,8 +89,9 @@ RECENT NEWS ARTICLES (sorted by relevance score):
   if (drivers.length > 0) {
     prompt += "\nPRE-IDENTIFIED DRIVERS (use as grounding, do not invent beyond these):\n";
     drivers.forEach((d, i) => {
-      prompt += `  [Driver ${i + 1}] ${d.title} (${d.driverType}, score: ${d.rawScore.toFixed(2)})\n`;
+      prompt += `  [Driver ${i + 1}] ${d.title} (${d.driverType}, strength: ${d.strength.toFixed(2)}, inference: ${d.inferenceLevel})\n`;
       prompt += `    ${d.explanation}\n`;
+      prompt += `    Evidence articles: [${d.evidenceArticleIndices.join(", ")}]\n`;
     });
   }
 
@@ -191,7 +194,8 @@ export async function synthesize(
   input: AnalysisInput,
   scoredArticles: ScoredArticle[],
   drivers: CandidateDriver[],
-  precomputedConfidence: "low" | "medium" | "high"
+  precomputedConfidence: "low" | "medium" | "high",
+  precomputedReasoningType: string = "unclear"
 ): Promise<ExplanationResult> {
   const pipelineMetadata = {
     articlesScored: scoredArticles.length,
@@ -204,7 +208,7 @@ export async function synthesize(
   }
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const userPrompt = buildPrompt(input, scoredArticles, drivers, precomputedConfidence);
+  const userPrompt = buildPrompt(input, scoredArticles, drivers, precomputedConfidence, precomputedReasoningType);
 
   let rawContent: string;
   try {

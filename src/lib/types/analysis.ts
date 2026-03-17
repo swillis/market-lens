@@ -39,15 +39,36 @@ export type ScoredArticle = NewsArticle & {
 
 /**
  * A candidate price-move driver identified during consolidation.
- * Carries evidence references so confidence can be computed deterministically.
+ *
+ * strength:              0–1, computed deterministically from the relevance
+ *                        scores of evidenceArticleIndices (NOT self-reported by LLM).
+ * inferenceLevel:        "direct" if company-specific evidence exists, else "supporting".
+ * supportingArticles:    resolved references for downstream consumers.
+ * evidenceArticleIndices: raw indices into the original article list.
  */
 export type CandidateDriver = {
   title: string;
   explanation: string;
   supportingArticles: ScoredArticle[];
   evidenceArticleIndices: number[];
-  driverType: "company" | "sector" | "macro" | "unclear";
-  rawScore: number; // 0–1 strength of evidence
+  driverType: "company" | "sector" | "macro";
+  strength: number;                          // 0–1 (deterministic)
+  inferenceLevel: "direct" | "supporting";
+};
+
+/**
+ * Return value of consolidateDrivers().
+ * Carries both the ranked drivers and the overall reasoning pattern,
+ * both of which are passed to synthesis as constraints.
+ */
+export type ConsolidationResult = {
+  drivers: CandidateDriver[];
+  reasoningType:
+    | "company"
+    | "sector"
+    | "macro"
+    | "company_and_sector"
+    | "unclear";
 };
 
 /**
