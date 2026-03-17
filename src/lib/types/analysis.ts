@@ -72,6 +72,16 @@ export type ConsolidationResult = {
 };
 
 /**
+ * Return value of calculateConfidence().
+ * Both fields are passed to synthesis — the label as a hard constraint,
+ * the score for future snapshot storage and trend analysis.
+ */
+export type ConfidenceResult = {
+  confidenceScore: number;                   // 0–1 (deterministic)
+  confidenceLabel: "low" | "medium" | "high";
+};
+
+/**
  * The final result of the pipeline.
  * Extends StockExplanation with pipeline metadata for observability and future
  * snapshot storage / narrative timeline features.

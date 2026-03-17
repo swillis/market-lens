@@ -21,8 +21,8 @@ export async function runExplanationPipeline(
 ): Promise<ExplanationResult> {
   const scoredArticles = await scoreArticles(input);
   const { drivers, reasoningType } = await consolidateDrivers(scoredArticles, input);
-  const confidence = calculateConfidence(scoredArticles, drivers, input);
-  const result = await synthesize(input, scoredArticles, drivers, confidence, reasoningType);
+  const { confidenceLabel } = calculateConfidence(scoredArticles, drivers, input);
+  const result = await synthesize(input, scoredArticles, drivers, confidenceLabel, reasoningType);
   return result;
 }
 
