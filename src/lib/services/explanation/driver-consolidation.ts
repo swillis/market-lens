@@ -1,6 +1,20 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { llmConsolidationSchema } from "@/lib/schemas/driver-consolidation";
-import type { LLMDriver } from "@/lib/schemas/driver-consolidation";
+/**
+ * Driver consolidation — deterministic, no LLM.
+ *
+ * The article-scoring step already assigns a `candidateDriver` label to every
+ * article. Consolidation groups articles by that label and computes driver
+ * strength from their relevance scores. No second LLM call is needed.
+ *
+ * This was previously an LLM clustering step. Removing it:
+ *   - saves one LLM call per fresh pipeline run
+ *   - makes clustering reproducible and testable
+ *   - keeps the driver titles stable (derived from the scorer's output)
+ *
+ * Upgrade path: if richer driver merging is needed later (e.g., deduplicating
+ * semantically similar labels), a lightweight embedding-based step can be
+ * inserted here without touching the upstream scorer or downstream synthesizer.
+ */
+
 import type {
   AnalysisInput,
   ScoredArticle,
@@ -14,71 +28,28 @@ import { generateCanonicalKey } from "@/lib/utils/canonical-key";
 // ---------------------------------------------------------------------------
 
 const MAX_DRIVERS = 3;
+const FALLBACK_LABEL = "General market news";
 
 // ---------------------------------------------------------------------------
-// System prompt — cluster only, never invent
-// ---------------------------------------------------------------------------
-
-const CONSOLIDATION_SYSTEM_PROMPT = `You are a financial evidence clustering engine. Your job is to group pre-scored news articles into 1–3 candidate drivers that explain a stock's price move.
-
-RULES:
-1. Only reference articles by index from the supplied list. Never invent events or cite sources not in the list.
-2. Prefer company-specific drivers when direct evidence exists (direct_evidence articles).
-3. Only create a sector driver when 2+ articles from different sources point to the same sector trend.
-4. Only create a macro driver when no company or sector explanation is adequate.
-5. If evidence is weak across all articles, return an empty drivers array and reasoningType "unclear".
-6. Each driver must cite at least one article index in evidenceArticleIndices.
-7. An article index can appear in multiple drivers if it supports both.
-8. inferenceLevel:
-   "direct"     — at least one supporting article is company-specific (relationType = company)
-   "supporting" — all supporting articles are sector or macro
-9. Return no more than ${MAX_DRIVERS} drivers, ranked strongest first.
-10. Return ONLY valid JSON. No markdown, no code fences.
-
-JSON SCHEMA:
-{
-  "drivers": [
-    {
-      "title": string,              // ≤8 words
-      "driverType": "company" | "sector" | "macro",
-      "evidenceArticleIndices": number[],
-      "inferenceLevel": "direct" | "supporting",
-      "explanation": string         // 1–2 sentences, grounded in supplied evidence
-    }
-  ],
-  "reasoningType": "company" | "sector" | "macro" | "company_and_sector" | "unclear"
-}`;
-
-// ---------------------------------------------------------------------------
-// Strength calculation — deterministic, not LLM-reported
+// Strength calculation — deterministic
 // ---------------------------------------------------------------------------
 
 /**
  * Compute driver strength from the relevance scores of its supporting articles.
  *
- *   base    = average normalised relevance of supporting articles (0–1)
- *   count   = small logarithmic bonus for corroborating sources
- *   direct  = +0.1 bonus when at least one article is direct_evidence
+ *   base   = average normalised relevance across supporting articles (0–1)
+ *   count  = diminishing bonus for corroborating sources (caps at 3 articles)
+ *   direct = +0.10 bonus when at least one article is direct_evidence
  *
  * Result is clamped to [0, 1].
  */
-function computeStrength(
-  indices: number[],
-  scoredArticles: ScoredArticle[]
-): number {
-  const articles = indices
-    .map((i) => scoredArticles.find((a) => a.articleIndex === i))
-    .filter(Boolean) as ScoredArticle[];
-
+function computeStrength(articles: ScoredArticle[]): number {
   if (articles.length === 0) return 0;
 
   const avgRelevance =
     articles.reduce((sum, a) => sum + a.relevance, 0) / articles.length;
   const base = avgRelevance / 5;
-
-  // Each additional article beyond the first adds a diminishing bonus
   const countBonus = Math.min(0.2, 0.07 * (articles.length - 1));
-
   const directBonus = articles.some((a) => a.usefulness === "direct_evidence")
     ? 0.1
     : 0;
@@ -87,61 +58,20 @@ function computeStrength(
 }
 
 // ---------------------------------------------------------------------------
-// Mock fallback — deterministic grouping by candidateDriver label
+// Reasoning type derivation — deterministic
 // ---------------------------------------------------------------------------
 
-function getMockConsolidation(
-  scoredArticles: ScoredArticle[]
-): ConsolidationResult {
-  if (scoredArticles.length === 0) {
-    return { drivers: [], reasoningType: "unclear" };
-  }
+function deriveReasoningType(
+  drivers: CandidateDriver[]
+): ConsolidationResult["reasoningType"] {
+  if (drivers.length === 0) return "unclear";
 
-  // Group by candidateDriver label from article-scoring step
-  const groups = new Map<string, ScoredArticle[]>();
-  for (const article of scoredArticles) {
-    const label = article.candidateDriver || "General news";
-    const group = groups.get(label) ?? [];
-    group.push(article);
-    groups.set(label, group);
-  }
-
-  const drivers: CandidateDriver[] = [...groups.entries()]
-    .sort((a, b) => b[1].length - a[1].length)
-    .slice(0, MAX_DRIVERS)
-    .map(([label, articles]) => {
-      const indices = articles.map((a) => a.articleIndex);
-      const hasCompany = articles.some((a) => a.relationType === "company");
-      return {
-        title: label,
-        canonicalKey: generateCanonicalKey(label),
-        explanation: articles[0]?.rationale ?? "No explanation available.",
-        supportingArticles: articles,
-        evidenceArticleIndices: indices,
-        driverType: hasCompany
-          ? "company"
-          : articles[0]?.relationType === "macro"
-          ? "macro"
-          : "sector",
-        strength: computeStrength(indices, scoredArticles),
-        inferenceLevel: hasCompany ? "direct" : "supporting",
-      };
-    });
-
-  const hasCompany = drivers.some((d) => d.driverType === "company");
-  const hasSector = drivers.some((d) => d.driverType === "sector");
-
-  return {
-    drivers,
-    reasoningType:
-      hasCompany && hasSector
-        ? "company_and_sector"
-        : hasCompany
-        ? "company"
-        : hasSector
-        ? "sector"
-        : "macro",
-  };
+  const types = new Set(drivers.map((d) => d.driverType));
+  if (types.has("company") && types.has("sector")) return "company_and_sector";
+  if (types.has("company")) return "company";
+  if (types.has("sector")) return "sector";
+  if (types.has("macro")) return "macro";
+  return "unclear";
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +85,7 @@ function logConsolidation(
   if (process.env.NODE_ENV !== "development") return;
 
   console.log(
-    `\n[driver-consolidation] ${symbol} — ${result.drivers.length} driver(s) | reasoningType=${result.reasoningType}`
+    `\n[driver-consolidation] ${symbol} — ${result.drivers.length} driver(s) | reasoningType=${result.reasoningType} | deterministic`
   );
   console.log("─".repeat(72));
 
@@ -163,133 +93,91 @@ function logConsolidation(
     console.log(
       `  ${i + 1}. [${d.driverType}/${d.inferenceLevel}] strength=${d.strength.toFixed(2)} — ${d.title}`
     );
+    console.log(`     key: ${d.canonicalKey}`);
     console.log(`     evidence: [${d.evidenceArticleIndices.join(", ")}]`);
-    console.log(`     ${d.explanation}`);
   });
 
   console.log("─".repeat(72) + "\n");
 }
 
 // ---------------------------------------------------------------------------
-// Main consolidation function
+// Main consolidation function — sync, no LLM
 // ---------------------------------------------------------------------------
 
 /**
  * Group scored articles into 1–3 candidate price-move drivers.
  *
- * The LLM acts as a clustering engine only — it identifies which articles
- * point to the same underlying event, not what caused the stock to move.
- * `strength` is computed deterministically from article relevance scores
- * so the model cannot inflate driver confidence.
+ * Each article carries a `candidateDriver` label assigned by the scorer.
+ * Articles with the same label are grouped together; strength is computed
+ * deterministically from their relevance scores.
+ *
+ * This function is synchronous — it consumes the output of scoreArticles()
+ * without making any additional API calls.
  */
-export async function consolidateDrivers(
+export function consolidateDrivers(
   scoredArticles: ScoredArticle[],
   input: AnalysisInput
-): Promise<ConsolidationResult> {
+): ConsolidationResult {
   if (scoredArticles.length === 0) {
     return { drivers: [], reasoningType: "unclear" };
   }
 
-  if (process.env.USE_MOCK_DATA === "true" || !process.env.ANTHROPIC_API_KEY) {
-    return getMockConsolidation(scoredArticles);
+  // Group by candidateDriver label (skip irrelevant articles)
+  const groups = new Map<string, ScoredArticle[]>();
+
+  for (const article of scoredArticles) {
+    if (article.usefulness === "irrelevant") continue;
+    const label = article.candidateDriver?.trim() || FALLBACK_LABEL;
+    const group = groups.get(label) ?? [];
+    group.push(article);
+    groups.set(label, group);
   }
 
-  const { price, company } = input;
-  const direction = price.changePercent >= 0 ? "UP" : "DOWN";
-  const absPercent = Math.abs(price.changePercent).toFixed(2);
+  // Build CandidateDriver for each group
+  const drivers: CandidateDriver[] = [...groups.entries()]
+    .map(([label, articles]) => {
+      // Sort group articles by relevance — highest first
+      const sorted = [...articles].sort((a, b) => b.relevance - a.relevance);
 
-  // Build prompt: give the LLM only what it needs — pre-scored article summaries
-  let userPrompt =
-    `STOCK: ${company.companyName} (${price.symbol})\n` +
-    `SECTOR: ${company.sector || "Unknown"}\n` +
-    `PRICE MOVE: ${direction} ${absPercent}% on ${price.asOf}\n\n` +
-    `Pre-scored articles (already filtered for relevance):\n\n`;
-
-  scoredArticles.forEach((a) => {
-    userPrompt +=
-      `[${a.articleIndex}] ${a.title}\n` +
-      `  relationType=${a.relationType} | relevance=${a.relevance}/5 | usefulness=${a.usefulness}\n` +
-      `  candidateDriver: "${a.candidateDriver}"\n` +
-      `  rationale: ${a.rationale}\n\n`;
-  });
-
-  userPrompt +=
-    `Group these ${scoredArticles.length} article(s) into at most ${MAX_DRIVERS} drivers. ` +
-    `Return JSON only.`;
-
-  // Call LLM
-  let rawContent: string;
-  try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      system: CONSOLIDATION_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userPrompt }],
-    });
-
-    const textBlock = response.content.find((b) => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
-      throw new Error("No text block in response");
-    }
-    rawContent = textBlock.text.trim();
-  } catch (err) {
-    console.warn(
-      "[driver-consolidation] LLM call failed, falling back to mock:",
-      err instanceof Error ? err.message : err
-    );
-    return getMockConsolidation(scoredArticles);
-  }
-
-  // Strip markdown fences if present
-  if (rawContent.startsWith("```")) {
-    rawContent = rawContent
-      .replace(/^```(?:json)?\n?/, "")
-      .replace(/\n?```$/, "");
-  }
-
-  // Parse + validate
-  let llmResult;
-  try {
-    llmResult = llmConsolidationSchema.parse(JSON.parse(rawContent));
-  } catch (err) {
-    console.warn(
-      "[driver-consolidation] Failed to parse consolidation response, falling back to mock:",
-      err instanceof Error ? err.message : err
-    );
-    return getMockConsolidation(scoredArticles);
-  }
-
-  // Map LLM output → CandidateDriver with deterministic strength
-  const drivers: CandidateDriver[] = llmResult.drivers
-    .filter((d: LLMDriver) => d.evidenceArticleIndices.length > 0)
-    .map((d: LLMDriver) => {
-      const indices = d.evidenceArticleIndices.filter(
-        (i) => i < scoredArticles.length || scoredArticles.some((a) => a.articleIndex === i)
+      const hasCompanyArticle = articles.some(
+        (a) => a.relationType === "company"
       );
-      const supporting = indices
-        .map((i) => scoredArticles.find((a) => a.articleIndex === i))
-        .filter(Boolean) as ScoredArticle[];
+      const hasDirectEvidence = articles.some(
+        (a) => a.usefulness === "direct_evidence"
+      );
+
+      const driverType: CandidateDriver["driverType"] = hasCompanyArticle
+        ? "company"
+        : sorted[0]?.relationType === "macro"
+        ? "macro"
+        : "sector";
+
+      const inferenceLevel: CandidateDriver["inferenceLevel"] = hasDirectEvidence
+        ? "direct"
+        : "supporting";
 
       return {
-        title: d.title,
-        canonicalKey: generateCanonicalKey(d.title),
-        explanation: d.explanation,
-        supportingArticles: supporting,
-        evidenceArticleIndices: indices,
-        driverType: d.driverType,
-        strength: computeStrength(indices, scoredArticles),
-        inferenceLevel: d.inferenceLevel,
+        title: label,
+        canonicalKey: generateCanonicalKey(label),
+        // explanation prose is written by the synthesis step — empty here
+        explanation: "",
+        supportingArticles: sorted,
+        evidenceArticleIndices: sorted.map((a) => a.articleIndex),
+        driverType,
+        strength: computeStrength(articles),
+        inferenceLevel,
       };
     })
-    .sort((a, b) => b.strength - a.strength);
+    // Rank strongest first, keep top MAX_DRIVERS
+    .sort((a, b) => b.strength - a.strength)
+    .slice(0, MAX_DRIVERS);
 
   const result: ConsolidationResult = {
     drivers,
-    reasoningType: llmResult.reasoningType,
+    reasoningType: deriveReasoningType(drivers),
   };
 
-  logConsolidation(price.symbol, result);
+  logConsolidation(input.price.symbol, result);
 
   return result;
 }

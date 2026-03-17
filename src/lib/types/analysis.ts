@@ -186,6 +186,14 @@ export type NarrativeSnapshot = {
   articles: ScoredArticle[];
 
   /**
+   * Deterministic hash of the key inputs used to generate this snapshot
+   * (symbol + price-change bucket + sorted article URLs/titles).
+   * Identical fingerprint → re-running the pipeline would produce the same
+   * result, so the request can be served from cache.
+   */
+  sourceFingerprint: string;
+
+  /**
    * Change tracking vs the previous snapshot.
    * All three fields are absent on the first snapshot for a symbol.
    */

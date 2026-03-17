@@ -155,6 +155,7 @@ export function buildSnapshot(
     evidenceArticleIndices: number[];
   }>,
   articles: NarrativeSnapshot["articles"],
+  sourceFingerprint: string,
   changes?: {
     changeNarrative: string | null;
     addedDriverChanges: NarrativeSnapshot["addedDriverChanges"];
@@ -172,6 +173,7 @@ export function buildSnapshot(
     reasoningType,
     drivers,
     articles,
+    sourceFingerprint,
     ...changes,
   };
 }
