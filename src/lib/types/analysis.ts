@@ -99,6 +99,55 @@ export type ExplanationResult = StockExplanation & {
 };
 
 /**
+ * A driver that exists in both the previous and current snapshot.
+ * Carries before/after strength so trend direction is visible without re-diffing.
+ */
+export type RetainedDriver = {
+  canonicalKey: string;
+  title: string;               // current title (LLM may rephrase between runs)
+  previousTitle: string;       // previous title, for change detection
+  driverType: "company" | "sector" | "macro";
+  inferenceLevel: "direct" | "supporting";
+  previousStrength: number;
+  currentStrength: number;
+  strengthDelta: number;       // current − previous  (+ve = strengthening, −ve = weakening)
+};
+
+/**
+ * The structured output of compareSnapshots().
+ * All fields are deterministic — no LLM involvement.
+ */
+export type SnapshotDiff = {
+  symbol: string;
+  previousSnapshot: NarrativeSnapshot;
+  currentSnapshot: NarrativeSnapshot;
+
+  addedDrivers: NarrativeSnapshot["drivers"];    // in current, not in previous
+  removedDrivers: NarrativeSnapshot["drivers"];  // in previous, not in current
+  retainedDrivers: RetainedDriver[];
+
+  confidenceDelta: number;           // current.confidenceScore − previous.confidenceScore
+  reasoningTypeChanged: boolean;
+
+  /**
+   * True when there is something worth narrating:
+   * any added/removed driver, confidence delta > 0.10, reasoning type shift,
+   * or a retained driver whose strength shifted by > 0.10.
+   */
+  hasChanges: boolean;
+};
+
+/**
+ * Final output of compareAndNarrate(): the structured diff plus the
+ * LLM-written one-to-two sentence change summary.
+ * narrativeSummary is null when hasChanges is false.
+ */
+export type NarrativeComparison = {
+  diff: SnapshotDiff;
+  narrativeSummary: string | null;
+};
+
+/**
  * An immutable point-in-time record of what the pipeline determined about a
  * stock's move. Stored whenever a new explanation is generated.
  *
