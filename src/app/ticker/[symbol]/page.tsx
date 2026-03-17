@@ -76,7 +76,15 @@ export default function TickerPage() {
         />
       )}
 
-      {result && (
+      {result && (() => {
+        // Collect unique article indices referenced by drivers, preserving order
+        const topArticleIndices = [
+          ...new Set(
+            result.explanation.drivers.flatMap((d) => d.evidenceArticleIndices)
+          ),
+        ];
+
+        return (
         <div className="space-y-6">
           <PriceCard price={result.price} company={result.company} />
 
@@ -96,7 +104,10 @@ export default function TickerPage() {
             drivers={result.explanation.drivers}
             news={result.news}
           />
-          <NewsList articles={result.news} />
+          <NewsList
+            articles={result.news}
+            topArticleIndices={topArticleIndices}
+          />
 
           <div className="flex items-center justify-center gap-2 pb-8 text-xs text-zinc-600">
             <Clock className="h-3 w-3" />
@@ -105,7 +116,8 @@ export default function TickerPage() {
             </span>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
