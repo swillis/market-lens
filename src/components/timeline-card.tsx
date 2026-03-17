@@ -1,7 +1,8 @@
 "use client";
 
-import { History, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { History, TrendingUp, TrendingDown, Minus, Clock, Moon } from "lucide-react";
 import { formatTime, timeAgo } from "@/lib/utils/dates";
+import { getMarketStatus } from "@/lib/utils/market-hours";
 import type { NarrativeSnapshot } from "@/lib/types/analysis";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +51,31 @@ function StrengthIcon({ delta }: { delta?: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// Market status callout — shown when market is not in regular session
+// ---------------------------------------------------------------------------
+
+function MarketStatusCallout() {
+  const market = getMarketStatus();
+  if (market.isRegularSession) return null;
+
+  const isClosedOrWeekend =
+    market.status === "closed";
+
+  return (
+    <div className="mb-5 flex items-start gap-2.5 rounded-lg border border-zinc-700/50 bg-zinc-800/40 px-3.5 py-3">
+      {isClosedOrWeekend
+        ? <Moon  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
+        : <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
+      }
+      <div className="min-w-0">
+        <span className="text-xs font-medium text-zinc-400">{market.label} · </span>
+        <span className="text-xs text-zinc-500">{market.description}</span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Timeline entry
 // ---------------------------------------------------------------------------
 
@@ -82,7 +108,7 @@ function TimelineEntry({
       </div>
 
       {/* Right: content */}
-      <div className={`min-w-0 flex-1 pb-6 ${isLast ? "" : ""}`}>
+      <div className="min-w-0 flex-1 pb-6">
         {/* Time + badges row */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold text-zinc-300">
@@ -145,6 +171,8 @@ export function TimelineCard({ snapshots }: { snapshots: SlimSnapshot[] }) {
           {snapshots.length}
         </span>
       </div>
+
+      <MarketStatusCallout />
 
       <div>
         {snapshots.map((snapshot, i) => (
