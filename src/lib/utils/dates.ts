@@ -21,3 +21,12 @@ export function formatTimestamp(dateString: string): string {
     hour12: true,
   });
 }
+
+/** Returns just the time portion, e.g. "2:50 PM" */
+export function formatTime(dateString: string): string {
+  return new Date(dateString).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}

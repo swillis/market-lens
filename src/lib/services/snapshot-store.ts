@@ -137,6 +137,8 @@ export function getAllSnapshots(): NarrativeSnapshot[] {
 /**
  * Build a NarrativeSnapshot from pipeline outputs.
  * Called by runExplanationPipeline() immediately after synthesize().
+ * The optional `changes` parameter is populated when a previous snapshot
+ * exists and meaningful narrative changes were detected.
  */
 export function buildSnapshot(
   symbol: string,
@@ -152,7 +154,12 @@ export function buildSnapshot(
     inferenceLevel: "direct" | "supporting";
     evidenceArticleIndices: number[];
   }>,
-  articles: NarrativeSnapshot["articles"]
+  articles: NarrativeSnapshot["articles"],
+  changes?: {
+    changeNarrative: string | null;
+    addedDriverChanges: NarrativeSnapshot["addedDriverChanges"];
+    removedDriverChanges: NarrativeSnapshot["removedDriverChanges"];
+  }
 ): NarrativeSnapshot {
   const timestamp = new Date().toISOString();
   return {
@@ -165,5 +172,6 @@ export function buildSnapshot(
     reasoningType,
     drivers,
     articles,
+    ...changes,
   };
 }

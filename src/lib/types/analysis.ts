@@ -184,4 +184,20 @@ export type NarrativeSnapshot = {
 
   /** The scored articles available at generation time */
   articles: ScoredArticle[];
+
+  /**
+   * Change tracking vs the previous snapshot.
+   * All three fields are absent on the first snapshot for a symbol.
+   */
+  changeNarrative?: string | null;
+  addedDriverChanges?: Array<{
+    canonicalKey: string;
+    title: string;
+    driverType: "company" | "sector" | "macro";
+  }>;
+  removedDriverChanges?: Array<{
+    canonicalKey: string;
+    title: string;
+    driverType: "company" | "sector" | "macro";
+  }>;
 };
