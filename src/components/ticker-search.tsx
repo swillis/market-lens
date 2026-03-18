@@ -126,14 +126,14 @@ export function TickerSearch() {
           onKeyDown={handleKeyDown}
           placeholder="Enter a ticker (e.g. NVDA)"
           maxLength={5}
-          className="w-full rounded-xl border border-zinc-700 bg-zinc-900 py-4 pl-12 pr-4 text-lg text-white placeholder-zinc-500 outline-none ring-zinc-500 transition focus:border-zinc-500 focus:ring-2"
+          className="w-full rounded-xl border border-zinc-200 bg-white py-4 pl-12 pr-4 text-lg text-zinc-900 placeholder-zinc-400 outline-none ring-zinc-200 transition focus:border-zinc-400 focus:ring-2"
         />
 
         {/* Autocomplete Dropdown */}
         {isOpen && suggestions.length > 0 && (
           <div
             ref={dropdownRef}
-            className="absolute top-full mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-900 shadow-lg z-50"
+            className="absolute top-full mt-2 w-full rounded-xl border border-zinc-200 bg-white shadow-sm z-50"
           >
             {isLoading && (
               <div className="px-4 py-3 text-sm text-zinc-400">
@@ -148,9 +148,9 @@ export function TickerSearch() {
                   onClick={() => navigateToTicker(ticker)}
                   className={`w-full px-4 py-3 text-left text-sm transition ${
                     index === selectedIndex
-                      ? "bg-zinc-800 text-white"
-                      : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                  } ${index > 0 ? "border-t border-zinc-800" : ""}`}
+                      ? "bg-zinc-100 text-zinc-900"
+                      : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
+                  } ${index > 0 ? "border-t border-zinc-100" : ""}`}
                 >
                   <span className="font-semibold">{ticker}</span>
                 </button>

@@ -13,11 +13,11 @@ function ArticleCard({ article }: { article: NewsArticle }) {
       href={article.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group block rounded-lg border border-zinc-800 bg-zinc-800/30 p-4 transition hover:border-zinc-600"
+      className="group block rounded-lg border border-zinc-200 bg-white p-4 transition hover:border-zinc-300"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-medium text-zinc-200 group-hover:text-white">
+          <h3 className="font-medium text-zinc-700 group-hover:text-zinc-900">
             {article.title}
           </h3>
           {article.summary && (
@@ -25,13 +25,13 @@ function ArticleCard({ article }: { article: NewsArticle }) {
               {article.summary}
             </p>
           )}
-          <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+          <div className="mt-2 flex items-center gap-2 text-xs text-zinc-400">
             <span>{article.source}</span>
             <span>&middot;</span>
             <span>{timeAgo(article.publishedAt)}</span>
           </div>
         </div>
-        <ExternalLink className="h-4 w-4 shrink-0 text-zinc-600 group-hover:text-zinc-400" />
+        <ExternalLink className="h-4 w-4 shrink-0 text-zinc-300 group-hover:text-zinc-500" />
       </div>
     </a>
   );
@@ -48,10 +48,10 @@ export function NewsList({
 
   if (articles.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+      <div className="rounded-xl border border-zinc-200 bg-white p-6">
         <div className="flex items-center gap-2">
           <Newspaper className="h-5 w-5 text-zinc-400" />
-          <h2 className="text-lg font-semibold text-white">Top Evidence</h2>
+          <h2 className="text-lg font-semibold text-zinc-900">Top Evidence</h2>
         </div>
         <p className="mt-4 text-sm text-zinc-500">
           No recent news articles found for this ticker.
@@ -71,11 +71,11 @@ export function NewsList({
   const hiddenCount = topArticles.length - TOP_COUNT;
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+    <div className="rounded-xl border border-zinc-200 bg-white p-6">
       <div className="mb-4 flex items-center gap-2">
         <Newspaper className="h-5 w-5 text-zinc-400" />
-        <h2 className="text-lg font-semibold text-white">Top Evidence</h2>
-        <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+        <h2 className="text-lg font-semibold text-zinc-900">Top Evidence</h2>
+        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">
           {articles.length}
         </span>
       </div>
@@ -89,7 +89,7 @@ export function NewsList({
       {hiddenCount > 0 && (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-800 py-2 text-sm text-zinc-500 transition hover:border-zinc-600 hover:text-zinc-300"
+          className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-200 py-2 text-sm text-zinc-500 transition hover:border-zinc-300 hover:text-zinc-700"
         >
           {expanded ? (
             <>

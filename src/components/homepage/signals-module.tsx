@@ -18,9 +18,9 @@ export function SignalsModule({ signals }: Props) {
   if (signals.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+    <div className="rounded-xl border border-zinc-200 bg-white p-6">
       <div className="mb-4">
-        <h2 className="text-sm font-semibold text-white">Strong Signals</h2>
+        <h2 className="text-sm font-semibold text-zinc-900">Strong Signals</h2>
         <p className="mt-0.5 text-xs text-zinc-500">
           AI-explained moves with high confidence
         </p>
@@ -31,17 +31,17 @@ export function SignalsModule({ signals }: Props) {
           <Link
             key={`${signal.symbol}-${signal.timestamp}`}
             href={`/ticker/${signal.symbol}`}
-            className="block rounded-lg border border-zinc-800/60 bg-zinc-900 px-4 py-3 transition hover:border-zinc-700 hover:bg-zinc-800/50"
+            className="block rounded-lg border border-zinc-200 bg-white px-4 py-3 transition hover:border-zinc-300 hover:bg-zinc-50"
           >
             <div className="mb-1.5 flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-white">
+              <span className="text-sm font-semibold text-zinc-900">
                 {signal.symbol}
               </span>
-              <span className="text-xs text-zinc-500 shrink-0">
+              <span className="text-xs text-zinc-400 shrink-0">
                 {timeAgo(signal.timestamp)}
               </span>
             </div>
-            <p className="text-xs leading-relaxed text-zinc-400 line-clamp-2">
+            <p className="text-xs leading-relaxed text-zinc-500 line-clamp-2">
               {signal.summary}
             </p>
           </Link>
