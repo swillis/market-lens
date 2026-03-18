@@ -109,7 +109,7 @@ export default function TickerPage() {
             <PriceCard price={result.price} company={result.company} />
 
             {intraday && intraday.points.length >= 2 && (
-              <ChartCard data={intraday.points} isPositive={intraday.isPositive} timeRange={intraday.timeRange} />
+              <ChartCard data={intraday.points} isPositive={intraday.isPositive} />
             )}
 
             {result.warnings && result.warnings.length > 0 && (

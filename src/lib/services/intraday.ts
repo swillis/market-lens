@@ -1,6 +1,11 @@
-import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
+import YahooFinance from "yahoo-finance2";
+
+const yahooFinance = new YahooFinance();
+
+type YahooChartResult = {
+  quotes: Array<{ date: Date; close: number | null }>;
+};
 import { getMockPrice } from "./mock-data";
-import type { PriceSnapshot } from "@/lib/types/market";
 
 export type IntradayPoint = {
   time: string;  // ISO timestamp
@@ -10,27 +15,26 @@ export type IntradayPoint = {
 export type IntradayData = {
   symbol: string;
   points: IntradayPoint[];
-  change: number;      // overall period change %
+  change: number;      // overall day change % (last vs first point)
   isPositive: boolean;
-  timeRange: "intraday" | "5d"; // drives the chart label ("Today" vs "5D")
 };
 
 // ---------------------------------------------------------------------------
-// Mock curve — curved path from previousClose to currentPrice.
-// Used in mock mode and as final fallback.
-// Exported so homepage can build sparklines without extra API calls.
+// Mock curve — 6 hourly points from previousClose to currentPrice.
+// Curved path using Math.sin for natural variation.
+// Used when USE_MOCK_DATA=true.
 // ---------------------------------------------------------------------------
 
-export function generateMockPoints(symbol: string): IntradayPoint[] {
+function generateMockPoints(symbol: string): IntradayData {
   const mockPrice = getMockPrice(symbol);
-  if (!mockPrice) return [];
+  if (!mockPrice) return { symbol, points: [], change: 0, isPositive: true };
 
   const { previousClose, currentPrice } = mockPrice;
   const today = new Date().toISOString().split("T")[0];
   const totalChange = currentPrice - previousClose;
 
   const hours = [9.5, 10.5, 11.5, 12.5, 13.5, 14.5];
-  return hours.map((hour, i) => {
+  const points: IntradayPoint[] = hours.map((hour, i) => {
     const t = i / (hours.length - 1);
     // f(t) = t + 0.15·sin(πt) — anchored at 0 and 1, gentle arch in between
     const f = t + 0.15 * Math.sin(Math.PI * t);
@@ -40,116 +44,76 @@ export function generateMockPoints(symbol: string): IntradayPoint[] {
     const time = `${today}T${String(hourInt).padStart(2, "0")}:${String(minuteInt).padStart(2, "0")}:00.000Z`;
     return { time, price };
   });
+
+  const change = +((currentPrice - previousClose) / previousClose * 100).toFixed(2);
+  return { symbol, points, change, isPositive: change >= 0 };
 }
 
 // ---------------------------------------------------------------------------
-// syntheticIntradayFromQuote — builds 4 real price anchors from quote data.
-// prevClose → open → dayLow|dayHigh (the "drama" point) → currentPrice
-// Zero extra API calls; uses fields already returned by /stable/quote.
+// fetchIntradayData — public API used by the /api/intraday route and homepage.
+// Uses yahoo-finance2 chart() for real hourly OHLCV.
+// Falls back to mock data in mock mode; returns empty points on error.
 // ---------------------------------------------------------------------------
 
-export function syntheticIntradayFromQuote(price: PriceSnapshot): IntradayPoint[] {
-  const { previousClose, currentPrice, open, dayLow, dayHigh } = price;
-  if (!open) return [];
-
-  const today = new Date().toISOString().split("T")[0];
-  const isUp = currentPrice >= previousClose;
-  // Show the intraday extreme that fits the overall direction
-  const dramaPrice = isUp ? (dayHigh ?? currentPrice) : (dayLow ?? currentPrice);
-
-  return [
-    { time: `${today}T09:30:00.000Z`, price: previousClose },
-    { time: `${today}T09:31:00.000Z`, price: open },
-    { time: `${today}T12:00:00.000Z`, price: dramaPrice },
-    { time: `${today}T16:00:00.000Z`, price: currentPrice },
-  ];
-}
-
-// ---------------------------------------------------------------------------
-// fetchEodData — 5-day daily closes via stable/historical-price-eod-light.
-// Available on the FMP free tier (250 req/day).
-// ---------------------------------------------------------------------------
-
-export async function fetchEodData(symbol: string): Promise<IntradayData | null> {
-  if (!process.env.FMP_API_KEY) return null;
+export async function fetchIntradayData(symbol: string): Promise<IntradayData> {
+  if (process.env.USE_MOCK_DATA === "true") {
+    return generateMockPoints(symbol);
+  }
 
   try {
-    const today = new Date();
-    const from = new Date(today);
-    from.setDate(from.getDate() - 7); // 7 calendar days covers ~5 trading days
-    const fromStr = from.toISOString().split("T")[0];
-    const toStr = today.toISOString().split("T")[0];
+    // Fetch 5 days of regular-session bars. includePrePost:false strips pre/after-hours
+    // so every bar is within the 9:30–16:00 ET window.
+    const fiveDaysAgo = new Date();
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
-    const url = `https://financialmodelingprep.com/stable/historical-price-eod-light?symbol=${encodeURIComponent(symbol)}&from=${fromStr}&to=${toStr}&apikey=${process.env.FMP_API_KEY}`;
-    const res = await fetchWithTimeout(url, {
-      timeout: 5000,
-      next: { revalidate: 300 },
-    } as RequestInit & { timeout?: number });
+    const result = await yahooFinance.chart(symbol, {
+      period1: fiveDaysAgo,
+      interval: "5m",
+      includePrePost: false,
+    }) as unknown as YahooChartResult;
 
-    if (!res.ok) {
-      console.warn(`[intraday] EOD failed for ${symbol}: ${res.status}`);
-      return null;
+    const quotes = result.quotes ?? [];
+
+    // Group bars by their ET calendar date (en-CA → "YYYY-MM-DD", naturally sortable).
+    const byDate = new Map<string, IntradayPoint[]>();
+    for (const q of quotes) {
+      if (q.close == null) continue;
+      const dateKey = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/New_York",
+      }).format(q.date);
+      const point: IntradayPoint = {
+        time: new Date(q.date).toISOString(),
+        price: q.close as number,
+      };
+      const bucket = byDate.get(dateKey);
+      if (bucket) bucket.push(point);
+      else byDate.set(dateKey, [point]);
     }
 
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) return null;
+    const sortedDates = [...byDate.keys()].sort(); // ascending YYYY-MM-DD
+    const todayKey = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+    }).format(new Date());
+    const todayBars = byDate.get(todayKey) ?? [];
 
-    // FMP returns newest first — sort chronologically
-    const sorted = [...(data as { date: string; close: number }[])]
-      .filter((d) => d.date && typeof d.close === "number")
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Use today's bars if the session has started; otherwise show the last complete session.
+    // This matches the Apple Stocks widget: growing line today, full previous day otherwise.
+    const selectedBars =
+      todayBars.length >= 2
+        ? todayBars
+        : (byDate.get(sortedDates[sortedDates.length - 1]) ?? []);
 
-    if (sorted.length < 2) return null;
+    if (selectedBars.length < 2) {
+      return { symbol, points: [], change: 0, isPositive: true };
+    }
 
-    const points: IntradayPoint[] = sorted.map((d) => ({
-      time: new Date(d.date).toISOString(),
-      price: d.close,
-    }));
-
-    const first = points[0].price;
-    const last = points[points.length - 1].price;
+    // Points are already in chronological order (yahoo returns them ascending).
+    const first = selectedBars[0].price;
+    const last = selectedBars[selectedBars.length - 1].price;
     const change = +((last - first) / first * 100).toFixed(2);
 
-    return { symbol, points, change, isPositive: change >= 0, timeRange: "5d" };
-  } catch (err) {
-    console.warn(`[intraday] fetchEodData error for ${symbol}:`, err);
-    return null;
+    return { symbol, points: selectedBars, change, isPositive: change >= 0 };
+  } catch {
+    return { symbol, points: [], change: 0, isPositive: true };
   }
-}
-
-// ---------------------------------------------------------------------------
-// fetchIntradayData — public API used by the /api/intraday route.
-// Chain: EOD 5-day (real, free tier) → synthetic from quote → mock curve
-// ---------------------------------------------------------------------------
-
-export async function fetchIntradayData(
-  symbol: string,
-  priceSnapshot?: PriceSnapshot
-): Promise<IntradayData> {
-  const useMock = process.env.USE_MOCK_DATA === "true" || !process.env.FMP_API_KEY;
-
-  if (useMock) {
-    const mockPrice = getMockPrice(symbol);
-    const points = generateMockPoints(symbol);
-    const change = mockPrice
-      ? +((mockPrice.currentPrice - mockPrice.previousClose) / mockPrice.previousClose * 100).toFixed(2)
-      : 0;
-    return { symbol, points, change, isPositive: change >= 0, timeRange: "intraday" };
-  }
-
-  // 1. Try 5-day EOD (real daily data, free tier)
-  const eod = await fetchEodData(symbol);
-  if (eod && eod.points.length >= 2) return eod;
-
-  // 2. Synthetic intraday from quote anchors (caller must supply price data)
-  if (priceSnapshot) {
-    const points = syntheticIntradayFromQuote(priceSnapshot);
-    if (points.length >= 2) {
-      const change = priceSnapshot.changePercent;
-      return { symbol, points, change, isPositive: change >= 0, timeRange: "intraday" };
-    }
-  }
-
-  // 3. No data available — return empty so the chart hides
-  return { symbol, points: [], change: 0, isPositive: true, timeRange: "intraday" };
 }

@@ -8,7 +8,7 @@ import { getMockPrice, getMockCompany } from "./mock-data";
 import { getAllSnapshots } from "./snapshot-store";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { fmpQuoteSchema } from "@/lib/schemas/api-responses";
-import { syntheticIntradayFromQuote, fetchEodData, generateMockPoints, type IntradayPoint } from "./intraday";
+import { fetchIntradayData, type IntradayPoint } from "./intraday";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -51,23 +51,18 @@ export type WatchItem = {
 };
 
 // ---------------------------------------------------------------------------
-// Intraday enrichment for signals + watchlist — uses 5-day EOD (free tier).
+// Intraday enrichment — fetches real hourly data via yahoo-finance2.
 // Per-symbol failures set intradayData: [] rather than failing the whole list.
 // ---------------------------------------------------------------------------
 
 async function enrichWithIntraday<T extends { symbol: string }>(
   items: T[]
 ): Promise<(T & { intradayData: IntradayPoint[] })[]> {
-  const useMock = process.env.USE_MOCK_DATA === "true" || !process.env.FMP_API_KEY;
-
   return Promise.all(
     items.map(async (item) => {
       try {
-        if (useMock) {
-          return { ...item, intradayData: generateMockPoints(item.symbol) };
-        }
-        const eod = await fetchEodData(item.symbol);
-        return { ...item, intradayData: eod?.points ?? [] };
+        const data = await fetchIntradayData(item.symbol);
+        return { ...item, intradayData: data.points };
       } catch {
         return { ...item, intradayData: [] as IntradayPoint[] };
       }
@@ -92,13 +87,13 @@ export async function fetchMovers(): Promise<MoverItem[] | null> {
     process.env.USE_MOCK_DATA === "true" || !process.env.FMP_API_KEY;
 
   if (useMock) {
-    const items: MoverItem[] = WATCHLIST.flatMap((sym) => {
+    const rawItems: MoverItem[] = WATCHLIST.flatMap((sym) => {
       const p = getMockPrice(sym);
       const c = getMockCompany(sym);
       if (!p || !c) return [];
-      return [{ symbol: sym, companyName: c.companyName, changePercent: p.changePercent, currentPrice: p.currentPrice, intradayData: generateMockPoints(sym) }];
+      return [{ symbol: sym, companyName: c.companyName, changePercent: p.changePercent, currentPrice: p.currentPrice }];
     });
-    return sortAndSliceMovers(items);
+    return enrichWithIntraday(sortAndSliceMovers(rawItems));
   }
 
   try {
@@ -113,13 +108,13 @@ export async function fetchMovers(): Promise<MoverItem[] | null> {
       console.warn(`[homepage] FMP batch quote failed: ${res.status}`);
       // 402 = batch endpoint not on free plan — fall back to mock data
       if (res.status === 402 || res.status === 403) {
-        const items: MoverItem[] = WATCHLIST.flatMap((sym) => {
+        const rawItems: MoverItem[] = WATCHLIST.flatMap((sym) => {
           const p = getMockPrice(sym);
           const c = getMockCompany(sym);
           if (!p || !c) return [];
-          return [{ symbol: sym, companyName: c.companyName, changePercent: p.changePercent, currentPrice: p.currentPrice, intradayData: generateMockPoints(sym) }];
+          return [{ symbol: sym, companyName: c.companyName, changePercent: p.changePercent, currentPrice: p.currentPrice }];
         });
-        return sortAndSliceMovers(items);
+        return enrichWithIntraday(sortAndSliceMovers(rawItems));
       }
       return null;
     }
@@ -131,9 +126,8 @@ export async function fetchMovers(): Promise<MoverItem[] | null> {
       return null;
     }
 
-    // Fetch company names — use profile endpoint for the watchlist
-    // We skip the extra profile call for perf and derive names from the mock-data
-    // as a lightweight lookup (just for display names on the homepage).
+    // Fetch company names — derive from mock-data as a lightweight lookup
+    // (just for display names on the homepage, no extra API calls needed).
     const nameMap = Object.fromEntries(
       WATCHLIST.map((sym) => {
         const c = getMockCompany(sym);
@@ -141,30 +135,14 @@ export async function fetchMovers(): Promise<MoverItem[] | null> {
       })
     );
 
-    // Build sparklines inline from the batch quote data — open/dayLow/dayHigh
-    // are already present, so zero extra API calls are needed.
-    const items: MoverItem[] = parsed.data.map((q) => {
-      const priceAnchor = {
-        symbol: q.symbol,
-        currentPrice: q.price,
-        previousClose: q.previousClose,
-        change: q.change,
-        changePercent: q.changePercentage,
-        asOf: new Date().toISOString(),
-        open: q.open,
-        dayLow: q.dayLow,
-        dayHigh: q.dayHigh,
-      };
-      return {
-        symbol: q.symbol,
-        companyName: nameMap[q.symbol] ?? q.symbol,
-        changePercent: q.changePercentage,
-        currentPrice: q.price,
-        intradayData: syntheticIntradayFromQuote(priceAnchor),
-      };
-    });
+    const rawItems: MoverItem[] = parsed.data.map((q) => ({
+      symbol: q.symbol,
+      companyName: nameMap[q.symbol] ?? q.symbol,
+      changePercent: q.changePercentage,
+      currentPrice: q.price,
+    }));
 
-    return sortAndSliceMovers(items);
+    return enrichWithIntraday(sortAndSliceMovers(rawItems));
   } catch (err) {
     console.warn("[homepage] fetchMovers error:", err);
     return null;
