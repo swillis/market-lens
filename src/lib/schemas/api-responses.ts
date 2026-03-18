@@ -7,6 +7,9 @@ export const fmpQuoteSchema = z.object({
   previousClose: z.number(),
   change: z.number(),
   changePercentage: z.number(),
+  open: z.number().optional(),
+  dayLow: z.number().optional(),
+  dayHigh: z.number().optional(),
 });
 export const fmpQuoteArraySchema = z.array(fmpQuoteSchema).min(1);
 

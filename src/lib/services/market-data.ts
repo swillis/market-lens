@@ -56,5 +56,8 @@ export async function fetchPriceSnapshot(
     changePercent: quote.changePercentage,
     currency: "USD",
     asOf: new Date().toISOString(),
+    open: quote.open,
+    dayLow: quote.dayLow,
+    dayHigh: quote.dayHigh,
   };
 }

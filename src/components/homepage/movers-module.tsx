@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { MoverItem } from "@/lib/services/homepage";
 import type { MarketStatus } from "@/lib/utils/market-hours";
+import { Sparkline } from "@/components/chart/sparkline";
 
 type Props = {
   movers: MoverItem[];
@@ -35,17 +36,27 @@ export function MoversModule({ movers, marketStatus }: Props) {
             <Link
               key={mover.symbol}
               href={`/ticker/${mover.symbol}`}
-              className="flex items-center justify-between rounded-lg px-3 py-2.5 transition hover:bg-zinc-50"
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition hover:bg-zinc-50"
             >
-              <div className="flex items-baseline gap-2">
-                <span className="text-sm font-semibold text-zinc-900">
+              <div className="flex items-baseline gap-2 min-w-0 flex-1">
+                <span className="text-sm font-semibold text-zinc-900 shrink-0">
                   {mover.symbol}
                 </span>
-                <span className="text-xs text-zinc-500 truncate max-w-[180px]">
+                <span className="text-xs text-zinc-500 truncate">
                   {mover.companyName}
                 </span>
               </div>
-              <div className="flex items-baseline gap-2 shrink-0 ml-4">
+
+              {mover.intradayData && mover.intradayData.length >= 2 && (
+                <Sparkline
+                  data={mover.intradayData}
+                  isPositive={isPositive}
+                  width={64}
+                  height={28}
+                />
+              )}
+
+              <div className="flex items-baseline gap-2 shrink-0">
                 <span className="text-xs text-zinc-400">
                   ${mover.currentPrice.toFixed(2)}
                 </span>

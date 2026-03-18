@@ -64,8 +64,7 @@ const MOCK_PRICES: Record<string, { price: number; prevClose: number }> = {
 };
 
 function getMockNewsForSymbol(symbol: string): NewsArticle[] {
-  const company = MOCK_COMPANIES[symbol];
-  if (!company) return [];
+  const company = MOCK_COMPANIES[symbol] ?? { name: symbol, sector: "Technology", industry: "Financial Technology", exchange: "NASDAQ" };
   const now = new Date();
 
   const newsTemplates: Record<string, NewsArticle[]> = {
@@ -165,13 +164,30 @@ const MOCK_PEERS: Record<string, string[]> = {
   META: ["GOOGL", "SNAP", "PINS"],
 };
 
+// Deterministic price seed from symbol string — gives stable mock values per ticker.
+function seedFromSymbol(symbol: string): number {
+  let h = 0;
+  for (let i = 0; i < symbol.length; i++) {
+    h = (Math.imul(31, h) + symbol.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
 export function getMockPrice(symbol: string): PriceSnapshot | null {
-  const data = MOCK_PRICES[symbol.toUpperCase()];
-  if (!data) return null;
+  const sym = symbol.toUpperCase();
+  const known = MOCK_PRICES[sym];
+  const data = known ?? (() => {
+    // Generate a stable generic price for unknown tickers
+    const seed = seedFromSymbol(sym);
+    const price = 20 + (seed % 480);              // $20–$500 range
+    const prevClose = +(price * (1 + ((seed % 11) - 5) / 100)).toFixed(2); // ±5% prev close
+    return { price, prevClose };
+  })();
+
   const change = +(data.price - data.prevClose).toFixed(2);
   const changePercent = +((change / data.prevClose) * 100).toFixed(2);
   return {
-    symbol: symbol.toUpperCase(),
+    symbol: sym,
     currentPrice: data.price,
     previousClose: data.prevClose,
     change,
@@ -182,14 +198,24 @@ export function getMockPrice(symbol: string): PriceSnapshot | null {
 }
 
 export function getMockCompany(symbol: string): CompanyProfile | null {
-  const data = MOCK_COMPANIES[symbol.toUpperCase()];
-  if (!data) return null;
+  const sym = symbol.toUpperCase();
+  const data = MOCK_COMPANIES[sym];
+  if (data) {
+    return {
+      symbol: sym,
+      companyName: data.name,
+      sector: data.sector,
+      industry: data.industry,
+      exchange: data.exchange,
+    };
+  }
+  // Generic fallback for unknown tickers
   return {
-    symbol: symbol.toUpperCase(),
-    companyName: data.name,
-    sector: data.sector,
-    industry: data.industry,
-    exchange: data.exchange,
+    symbol: sym,
+    companyName: sym,
+    sector: "Technology",
+    industry: "Financial Technology",
+    exchange: "NASDAQ",
   };
 }
 
