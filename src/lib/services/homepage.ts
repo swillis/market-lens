@@ -38,7 +38,14 @@ export type SignalItem = {
   summary: string;      // truncated to 100 chars
   confidenceScore: number;
   timestamp: string;
+  changePercent?: number;
   intradayData?: IntradayPoint[];
+};
+
+export type StoryItem = {
+  headline: string;
+  publishedAt: string;
+  relatedTickers: Array<{ symbol: string; changePercent: number }>;
 };
 
 export type WatchItem = {
@@ -306,6 +313,98 @@ async function fetchEarningsCalendar(): Promise<WatchItem[]> {
 }
 
 // ---------------------------------------------------------------------------
+// fetchAllWatchlistPrices — full 20-symbol price map for enrichment
+// ---------------------------------------------------------------------------
+
+async function fetchAllWatchlistPrices(): Promise<Map<string, number>> {
+  const useMock =
+    process.env.USE_MOCK_DATA === "true" || !process.env.FMP_API_KEY;
+
+  if (useMock) {
+    const map = new Map<string, number>();
+    for (const sym of WATCHLIST) {
+      const p = getMockPrice(sym);
+      if (p) map.set(sym, p.changePercent);
+    }
+    return map;
+  }
+
+  try {
+    const symbols = WATCHLIST.join(",");
+    const url = `https://financialmodelingprep.com/stable/quote?symbol=${encodeURIComponent(symbols)}&apikey=${process.env.FMP_API_KEY}`;
+    const res = await fetchWithTimeout(url, {
+      timeout: 8000,
+      next: { revalidate: 60 },
+    } as RequestInit & { timeout?: number });
+
+    if (!res.ok) {
+      // Fall back to mock prices
+      const map = new Map<string, number>();
+      for (const sym of WATCHLIST) {
+        const p = getMockPrice(sym);
+        if (p) map.set(sym, p.changePercent);
+      }
+      return map;
+    }
+
+    const data = await res.json();
+    const parsed = fmpBatchQuoteSchema.safeParse(data);
+    if (!parsed.success) return new Map();
+
+    return new Map(parsed.data.map((q) => [q.symbol, q.changePercentage]));
+  } catch {
+    return new Map();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// fetchMarketStories — news items tagged with mentioned tickers
+// ---------------------------------------------------------------------------
+
+async function fetchMarketStories(
+  priceMap: Map<string, number>
+): Promise<StoryItem[]> {
+  if (process.env.USE_MOCK_DATA === "true" || !process.env.FINNHUB_API_KEY) {
+    return [];
+  }
+
+  try {
+    const newsItems = await fetchWatchlistNews();
+
+    const stories: StoryItem[] = newsItems
+      .filter((item) => item.type === "news")
+      .map((item) => {
+        const seen = new Set<string>();
+        // Always include the item's own symbol
+        if (priceMap.has(item.symbol)) {
+          seen.add(item.symbol);
+        }
+        // Scan headline for other WATCHLIST tickers
+        for (const ticker of WATCHLIST) {
+          if (!seen.has(ticker)) {
+            const re = new RegExp(`\\b${ticker}\\b`, "i");
+            if (re.test(item.headline) && priceMap.has(ticker)) {
+              seen.add(ticker);
+            }
+          }
+        }
+        const relatedTickers = Array.from(seen).map((sym) => ({
+          symbol: sym,
+          changePercent: priceMap.get(sym)!,
+        }));
+        return { headline: item.headline, publishedAt: item.publishedAt, relatedTickers };
+      })
+      .filter((s) => s.relatedTickers.length > 0)
+      .slice(0, 5);
+
+    return stories;
+  } catch (err) {
+    console.warn("[homepage] fetchMarketStories error:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Aggregate — called by the API route
 // ---------------------------------------------------------------------------
 
@@ -313,13 +412,23 @@ export type HomepageData = {
   movers: MoverItem[] | null;
   signals: SignalItem[];
   watchlist: WatchItem[] | null;
+  stories: StoryItem[];
 };
 
 export async function fetchHomepageData(): Promise<HomepageData> {
-  const [movers, signals, watchlist] = await Promise.all([
+  const [movers, rawSignals, watchlist, priceMap] = await Promise.all([
     fetchMovers(),
     fetchHighConfidenceSignals(),
     fetchWatchlist(),
+    fetchAllWatchlistPrices(),
   ]);
-  return { movers, signals, watchlist };
+
+  const signals = rawSignals.map((s) => ({
+    ...s,
+    changePercent: priceMap.get(s.symbol),
+  }));
+
+  const stories = await fetchMarketStories(priceMap);
+
+  return { movers, signals, watchlist, stories };
 }

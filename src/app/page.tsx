@@ -1,7 +1,7 @@
 import { TickerSearch } from "@/components/ticker-search";
 import { MoversModule } from "@/components/homepage/movers-module";
 import { SignalsModule } from "@/components/homepage/signals-module";
-import { WatchlistModule } from "@/components/homepage/watchlist-module";
+import { MarketStoriesSection } from "@/components/homepage/market-stories-section";
 import { getMarketStatus } from "@/lib/utils/market-hours";
 import { fetchHomepageData } from "@/lib/services/homepage";
 
@@ -9,71 +9,31 @@ export const revalidate = 300; // 5 minutes
 
 export default async function HomePage() {
   const { status } = getMarketStatus();
-  const { movers, signals, watchlist } = await fetchHomepageData();
-
-  const isOpen = status === "open";
-  const isClosedOrAfter = status === "closed" || status === "after_hours";
-  const isPreMarket = status === "pre_market";
+  const { movers, signals, stories } = await fetchHomepageData();
 
   return (
     <div className="flex flex-col items-center">
-      {/* Hero — search box, always visible */}
-      <div className="flex min-h-[40vh] w-full flex-col items-center justify-center py-16">
-        <div className="mb-2 text-sm font-medium uppercase tracking-widest text-zinc-400">
-          Stock Move Explainer
-        </div>
-        <h1 className="mb-2 text-4xl font-bold tracking-tight text-zinc-900">
+      {/* Compact hero */}
+      <div className="w-full max-w-3xl px-4 pt-10 pb-8 text-center">
+        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-widest text-zinc-400">
+          Stock move explainer
+        </p>
+        <h1 className="mb-6 text-[28px] font-medium tracking-tight text-zinc-900">
           Market Lens
         </h1>
-        <p className="mb-8 max-w-md text-center text-zinc-500">
-          Type a ticker to understand why a stock is moving today.
-          AI-powered analysis backed by real-time news.
-        </p>
         <TickerSearch />
       </div>
 
-      {/* Market-aware modules */}
-      <div className="w-full max-w-3xl space-y-6 pb-16">
-        {/* MARKET OPEN */}
-        {isOpen && (
-          <>
-            {movers && movers.length > 0 && (
-              <MoversModule movers={movers} marketStatus={status} />
-            )}
-            {signals.length > 0 && (
-              <SignalsModule signals={signals} />
-            )}
-          </>
+      {/* Three sections */}
+      <div className="w-full max-w-3xl space-y-6 px-4 pb-16">
+        {movers && movers.length > 0 && (
+          <MoversModule movers={movers} signals={signals} marketStatus={status} />
         )}
-
-        {/* MARKET CLOSED / AFTER HOURS */}
-        {isClosedOrAfter && (
-          <>
-            {movers && movers.length > 0 && (
-              <MoversModule movers={movers} marketStatus={status} />
-            )}
-            {watchlist && watchlist.length > 0 && (
-              <WatchlistModule items={watchlist} marketStatus={status} />
-            )}
-            {signals.length > 0 && (
-              <SignalsModule signals={signals} />
-            )}
-          </>
+        {signals.length > 0 && (
+          <SignalsModule signals={signals} />
         )}
-
-        {/* PRE-MARKET */}
-        {isPreMarket && (
-          <>
-            {movers && movers.length > 0 && (
-              <MoversModule movers={movers} marketStatus={status} />
-            )}
-            {watchlist && watchlist.length > 0 && (
-              <WatchlistModule items={watchlist} marketStatus={status} />
-            )}
-            {signals.length > 0 && (
-              <SignalsModule signals={signals} />
-            )}
-          </>
+        {stories.length > 0 && (
+          <MarketStoriesSection stories={stories} />
         )}
       </div>
     </div>
