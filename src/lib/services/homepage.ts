@@ -8,6 +8,7 @@ import { getMockPrice, getMockCompany } from "./mock-data";
 import { getAllSnapshots } from "./snapshot-store";
 import { fetchWithTimeout } from "@/lib/fetch-with-timeout";
 import { fmpQuoteSchema } from "@/lib/schemas/api-responses";
+import { syntheticIntradayFromQuote, fetchEodData, generateMockPoints, type IntradayPoint } from "./intraday";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,7 @@ export type MoverItem = {
   companyName: string;
   changePercent: number;
   currentPrice: number;
+  intradayData?: IntradayPoint[];
 };
 
 export type SignalItem = {
@@ -36,6 +38,7 @@ export type SignalItem = {
   summary: string;      // truncated to 100 chars
   confidenceScore: number;
   timestamp: string;
+  intradayData?: IntradayPoint[];
 };
 
 export type WatchItem = {
@@ -44,7 +47,33 @@ export type WatchItem = {
   type: "news" | "earnings";
   source: string;       // news source name or "Earnings"
   publishedAt: string;  // ISO 8601
+  intradayData?: IntradayPoint[];
 };
+
+// ---------------------------------------------------------------------------
+// Intraday enrichment for signals + watchlist — uses 5-day EOD (free tier).
+// Per-symbol failures set intradayData: [] rather than failing the whole list.
+// ---------------------------------------------------------------------------
+
+async function enrichWithIntraday<T extends { symbol: string }>(
+  items: T[]
+): Promise<(T & { intradayData: IntradayPoint[] })[]> {
+  const useMock = process.env.USE_MOCK_DATA === "true" || !process.env.FMP_API_KEY;
+
+  return Promise.all(
+    items.map(async (item) => {
+      try {
+        if (useMock) {
+          return { ...item, intradayData: generateMockPoints(item.symbol) };
+        }
+        const eod = await fetchEodData(item.symbol);
+        return { ...item, intradayData: eod?.points ?? [] };
+      } catch {
+        return { ...item, intradayData: [] as IntradayPoint[] };
+      }
+    })
+  );
+}
 
 // ---------------------------------------------------------------------------
 // FMP batch quote schema (stable/quote supports comma-separated symbols)
@@ -67,7 +96,7 @@ export async function fetchMovers(): Promise<MoverItem[] | null> {
       const p = getMockPrice(sym);
       const c = getMockCompany(sym);
       if (!p || !c) return [];
-      return [{ symbol: sym, companyName: c.companyName, changePercent: p.changePercent, currentPrice: p.currentPrice }];
+      return [{ symbol: sym, companyName: c.companyName, changePercent: p.changePercent, currentPrice: p.currentPrice, intradayData: generateMockPoints(sym) }];
     });
     return sortAndSliceMovers(items);
   }
@@ -88,7 +117,7 @@ export async function fetchMovers(): Promise<MoverItem[] | null> {
           const p = getMockPrice(sym);
           const c = getMockCompany(sym);
           if (!p || !c) return [];
-          return [{ symbol: sym, companyName: c.companyName, changePercent: p.changePercent, currentPrice: p.currentPrice }];
+          return [{ symbol: sym, companyName: c.companyName, changePercent: p.changePercent, currentPrice: p.currentPrice, intradayData: generateMockPoints(sym) }];
         });
         return sortAndSliceMovers(items);
       }
@@ -112,12 +141,28 @@ export async function fetchMovers(): Promise<MoverItem[] | null> {
       })
     );
 
-    const items: MoverItem[] = parsed.data.map((q) => ({
-      symbol: q.symbol,
-      companyName: nameMap[q.symbol] ?? q.symbol,
-      changePercent: q.changePercentage,
-      currentPrice: q.price,
-    }));
+    // Build sparklines inline from the batch quote data — open/dayLow/dayHigh
+    // are already present, so zero extra API calls are needed.
+    const items: MoverItem[] = parsed.data.map((q) => {
+      const priceAnchor = {
+        symbol: q.symbol,
+        currentPrice: q.price,
+        previousClose: q.previousClose,
+        change: q.change,
+        changePercent: q.changePercentage,
+        asOf: new Date().toISOString(),
+        open: q.open,
+        dayLow: q.dayLow,
+        dayHigh: q.dayHigh,
+      };
+      return {
+        symbol: q.symbol,
+        companyName: nameMap[q.symbol] ?? q.symbol,
+        changePercent: q.changePercentage,
+        currentPrice: q.price,
+        intradayData: syntheticIntradayFromQuote(priceAnchor),
+      };
+    });
 
     return sortAndSliceMovers(items);
   } catch (err) {
@@ -139,7 +184,7 @@ function sortAndSliceMovers(items: MoverItem[]): MoverItem[] {
 export async function fetchHighConfidenceSignals(): Promise<SignalItem[]> {
   try {
     const all = await getAllSnapshots();
-    return all
+    const signals = all
       .filter((s) => s.confidenceLabel === "high")
       .slice(0, 4)
       .map((s) => ({
@@ -148,6 +193,7 @@ export async function fetchHighConfidenceSignals(): Promise<SignalItem[]> {
         confidenceScore: s.confidenceScore,
         timestamp: s.timestamp,
       }));
+    return enrichWithIntraday(signals);
   } catch (err) {
     console.warn("[homepage] fetchHighConfidenceSignals error:", err);
     return [];
@@ -199,7 +245,8 @@ export async function fetchWatchlist(): Promise<WatchItem[] | null> {
     .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
     .slice(0, 6);
 
-  return combined.length > 0 ? combined : null;
+  if (combined.length === 0) return null;
+  return enrichWithIntraday(combined);
 }
 
 async function fetchWatchlistNews(): Promise<WatchItem[]> {

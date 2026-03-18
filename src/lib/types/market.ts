@@ -6,6 +6,10 @@ export type PriceSnapshot = {
   changePercent: number;
   currency?: string;
   asOf: string;
+  // Intraday anchors — populated from the quote endpoint when available
+  open?: number;
+  dayLow?: number;
+  dayHigh?: number;
 };
 
 export type CompanyProfile = {

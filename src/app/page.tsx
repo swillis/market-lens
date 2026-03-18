@@ -19,13 +19,13 @@ export default async function HomePage() {
     <div className="flex flex-col items-center">
       {/* Hero — search box, always visible */}
       <div className="flex min-h-[40vh] w-full flex-col items-center justify-center py-16">
-        <div className="mb-2 text-sm font-medium uppercase tracking-widest text-zinc-500">
+        <div className="mb-2 text-sm font-medium uppercase tracking-widest text-zinc-400">
           Stock Move Explainer
         </div>
-        <h1 className="mb-2 text-4xl font-bold tracking-tight text-white">
+        <h1 className="mb-2 text-4xl font-bold tracking-tight text-zinc-900">
           Market Lens
         </h1>
-        <p className="mb-8 max-w-md text-center text-zinc-400">
+        <p className="mb-8 max-w-md text-center text-zinc-500">
           Type a ticker to understand why a stock is moving today.
           AI-powered analysis backed by real-time news.
         </p>

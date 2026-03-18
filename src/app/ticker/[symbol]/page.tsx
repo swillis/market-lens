@@ -9,12 +9,14 @@ import { ExplanationCard } from "@/components/explanation-card";
 import { DriversCard } from "@/components/drivers-card";
 import { NewsList } from "@/components/news-list";
 import { TimelineCard } from "@/components/timeline-card";
+import { ChartCard } from "@/components/chart/chart-card";
 import { LoadingSkeleton } from "@/components/loading-skeleton";
 import { ErrorState } from "@/components/error-state";
 import { TickerSearch } from "@/components/ticker-search";
 import { formatTimestamp } from "@/lib/utils/dates";
 import type { TickerResult, ApiErrorResponse } from "@/lib/types/market";
 import type { NarrativeSnapshot } from "@/lib/types/analysis";
+import type { IntradayData } from "@/lib/services/intraday";
 
 type SlimSnapshot = Omit<NarrativeSnapshot, "articles">;
 
@@ -26,6 +28,7 @@ export default function TickerPage() {
   const [error, setError]         = useState<ApiErrorResponse | null>(null);
   const [loading, setLoading]     = useState(true);
   const [snapshots, setSnapshots] = useState<SlimSnapshot[]>([]);
+  const [intraday, setIntraday]   = useState<IntradayData | null>(null);
 
   // Main analysis fetch
   useEffect(() => {
@@ -35,6 +38,7 @@ export default function TickerPage() {
     setError(null);
     setResult(null);
     setSnapshots([]);
+    setIntraday(null);
 
     fetch(`/api/explain?symbol=${encodeURIComponent(symbol)}`)
       .then(async (res) => {
@@ -53,7 +57,7 @@ export default function TickerPage() {
       .finally(() => setLoading(false));
   }, [symbol]);
 
-  // Timeline fetch — runs after the main result lands (snapshot stored by then)
+  // Timeline + intraday fetches — run after the main result lands
   useEffect(() => {
     if (!result || !symbol) return;
 
@@ -61,6 +65,11 @@ export default function TickerPage() {
       .then((res) => res.json())
       .then((data: SlimSnapshot[]) => setSnapshots(data))
       .catch(() => {/* non-fatal — timeline is supplementary */});
+
+    fetch(`/api/intraday/${encodeURIComponent(symbol)}`)
+      .then((res) => res.json())
+      .then((data: IntradayData) => setIntraday(data))
+      .catch(() => {/* non-fatal — chart is supplementary */});
   }, [result, symbol]);
 
   return (
@@ -98,6 +107,10 @@ export default function TickerPage() {
         return (
           <div className="space-y-6">
             <PriceCard price={result.price} company={result.company} />
+
+            {intraday && intraday.points.length >= 2 && (
+              <ChartCard data={intraday.points} isPositive={intraday.isPositive} timeRange={intraday.timeRange} />
+            )}
 
             {result.warnings && result.warnings.length > 0 && (
               <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3">
