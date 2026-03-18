@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: Promise<{ symbol: string }> }
 ) {
   const { symbol } = await params;
-  const snapshots = getSnapshots(symbol.toUpperCase());
+  const snapshots = await getSnapshots(symbol.toUpperCase());
 
   // Strip the full articles array from the response to keep payload small —
   // the timeline UI only needs driver metadata and change descriptions.

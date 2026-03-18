@@ -127,7 +127,6 @@ export function TickerSearch() {
           placeholder="Enter a ticker (e.g. NVDA)"
           maxLength={5}
           className="w-full rounded-xl border border-zinc-700 bg-zinc-900 py-4 pl-12 pr-4 text-lg text-white placeholder-zinc-500 outline-none ring-zinc-500 transition focus:border-zinc-500 focus:ring-2"
-          autoFocus
         />
 
         {/* Autocomplete Dropdown */}

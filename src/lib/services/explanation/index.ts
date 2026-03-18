@@ -65,7 +65,7 @@ function maybeStoreSnapshot(
   void (async () => {
     try {
       const symbol = input.price.symbol;
-      const [latestSnapshot] = getSnapshots(symbol);
+      const [latestSnapshot] = await getSnapshots(symbol);
 
       const { shouldGenerate, reason } = shouldGenerateNewSnapshot({
         latestSnapshot: latestSnapshot ?? null,
@@ -91,7 +91,7 @@ function maybeStoreSnapshot(
 
       if (!latestSnapshot) {
         // First snapshot — store unconditionally
-        storeSnapshot(candidate);
+        await storeSnapshot(candidate);
         log(`Snapshot stored for ${symbol} (first snapshot)`);
         return;
       }
@@ -106,7 +106,7 @@ function maybeStoreSnapshot(
 
       const changeNarrative = generateNarrativeSummary(diff); // sync, no LLM
 
-      storeSnapshot(
+      await storeSnapshot(
         buildSnapshot(
           symbol,
           result.summary,
